@@ -109,3 +109,4 @@ PY
 echo "[5/5] Done. Noctalia is installed and configured."
 echo "Wallpaper: $wallpaper_dir/wallpaper.jpg"
 echo "Config: $config_dir/"
+noctalia
