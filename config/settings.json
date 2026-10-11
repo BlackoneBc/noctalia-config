@@ -1,12 +1,53 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+
+default_repo_url="https://github.com/BlackoneBc/noctalia-config/archive/refs/heads/main.tar.gz"
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/noctalia"
 wallpaper_dir="$HOME/Pictures/Noctalia/Wallpapers"
 
-# Keep this safe and portable: avoid hardcoded paths, monitor names, and app IDs.
-# We only copy the config and set a clean wallpaper path.
+# Accept an optional wallpaper path as first argument.
+# Example: ./install-noctalia.sh ~/Downloads/Wallpaper.jpg
+WALLPAPER_SOURCE="${1:-}"
+
+# Use the repo directory if this file is inside a checked-out repo; otherwise fetch the repo archive.
+if [[ -d "$SCRIPT_DIR/config" && -f "$SCRIPT_DIR/config/settings.json" ]]; then
+  repo_dir="$SCRIPT_DIR"
+else
+  echo "[0/4] Downloading Noctalia config repo archive..."
+  tmprepo="$(mktemp -d)"
+  trap 'rm -rf "$tmprepo"' EXIT
+  curl -fsSL "$default_repo_url" -o "$tmprepo/noctalia-config.tar.gz"
+  tar -xzf "$tmprepo/noctalia-config.tar.gz" -C "$tmprepo"
+  repo_dir="$(find "$tmprepo" -mindepth 1 -maxdepth 2 -type d -name 'noctalia-config-*' | head -n 1)"
+  if [[ -z "$repo_dir" ]]; then
+    echo "ERROR: Could not locate extracted repo directory."
+    exit 1
+  fi
+fi
+
+# Determine wallpaper source in a portable way.
+if [[ -n "$WALLPAPER_SOURCE" ]]; then
+  wallpaper_source="$WALLPAPER_SOURCE"
+elif [[ -f "$SCRIPT_DIR/Wallpaper.jpg" ]]; then
+  wallpaper_source="$SCRIPT_DIR/Wallpaper.jpg"
+elif [[ -f "$repo_dir/Wallpaper.jpg" ]]; then
+  wallpaper_source="$repo_dir/Wallpaper.jpg"
+elif [[ -f "$PWD/Wallpaper.jpg" ]]; then
+  wallpaper_source="$PWD/Wallpaper.jpg"
+else
+  echo "ERROR: No wallpaper file found."
+  echo "Usage: $0 /path/to/Wallpaper.jpg"
+  echo "or place Wallpaper.jpg next to this script or in the current directory."
+  exit 1
+fi
+
+if [[ ! -f "$wallpaper_source" ]]; then
+  echo "ERROR: Wallpaper file not found: $wallpaper_source"
+  exit 1
+fi
 
 if ! command -v git >/dev/null 2>&1; then
   echo "[1/4] Installing git..."
@@ -32,15 +73,10 @@ fi
 echo "[3/4] Preparing config directory and wallpaper folder..."
 mkdir -p "$config_dir" "$wallpaper_dir"
 
-if [[ ! -f "$repo_dir/Wallpaper.jpg" ]]; then
-  echo "Please place your wallpaper as '$repo_dir/Wallpaper.jpg' and rerun this script."
-  exit 1
-fi
-
 cp -f "$repo_dir/config/colors.json" "$config_dir/colors.json"
 cp -f "$repo_dir/config/plugins.json" "$config_dir/plugins.json"
 
-python3 - "$config_dir" "$wallpaper_dir" "$repo_dir/config/settings.json" <<'PY'
+python3 - "$config_dir" "$wallpaper_dir" "$repo_dir/config/settings.json" "$wallpaper_source" <<'PY'
 import json
 import os
 import sys
@@ -48,33 +84,37 @@ import sys
 config_dir = sys.argv[1]
 wallpaper_dir = sys.argv[2]
 settings_path = sys.argv[3]
+wallpaper_source = sys.argv[4]
 
 with open(settings_path, 'r', encoding='utf-8') as f:
     settings = json.load(f)
 
-wallpaper_path = os.path.join(wallpaper_dir, 'Wallpaper.jpg')
+wallpaper_name = os.path.basename(wallpaper_source)
+wallpaper_target = os.path.join(wallpaper_dir, wallpaper_name)
 
-# Replace personal paths with a portable user-local path.
-settings['general']['avatarImage'] = wallpaper_path
+# copy wallpaper to the expected target
+os.makedirs(wallpaper_dir, exist_ok=True)
+with open(wallpaper_source, 'rb') as src, open(wallpaper_target, 'wb') as dst:
+    dst.write(src.read())
 
-# General portability: no user-specific monitor names or paths.
-for key in ['monitors', 'screenOverrides']:
-    if 'bar' in settings and key in settings['bar']:
-        settings['bar'][key] = []
-    if 'dock' in settings and key in settings['dock']:
-        settings['dock'][key] = []
-    if 'notifications' in settings and key in settings['notifications']:
-        settings['notifications'][key] = []
-    if 'osd' in settings and key in settings['osd']:
-        settings['osd'][key] = []
+# portable paths, no personal absolute paths
+settings['general']['avatarImage'] = wallpaper_target
+settings['wallpaper']['directory'] = wallpaper_dir
+settings['wallpaper']['favorites'] = [{
+    "appearance": "dark",
+    "colorScheme": "Catppuccin",
+    "darkMode": True,
+    "generationMethod": "tonal-spot",
+    "paletteColors": ["#cba6f7", "#fab387", "#94e2d5", "#f38ba8"],
+    "path": wallpaper_target,
+    "useWallpaperColors": False,
+}]
+settings['wallpaper']['enabled'] = True
+settings['wallpaper']['monitorDirectories'] = []
+settings['wallpaper']['setWallpaperOnAllMonitors'] = True
+settings['wallpaper']['panelPosition'] = 'follow_bar'
 
-# Remove monitor-specific widget layout to keep it portable.
-if 'desktopWidgets' in settings:
-    settings['desktopWidgets']['enabled'] = False
-    settings['desktopWidgets']['monitorWidgets'] = []
-    settings['desktopWidgets']['overviewEnabled'] = False
-
-# Keep app launchers generic and safe on a fresh Arch setup.
+# keep the config portable and avoid personal app IDs / monitor names
 settings['appLauncher']['pinnedApps'] = [
     'firefox',
     'org.gnome.Nautilus',
@@ -88,32 +128,22 @@ settings['dock']['pinnedApps'] = [
     'Alacritty'
 ]
 
-# Wallpaper setup: use the freshly copied wallpaper image.
-settings['wallpaper']['directory'] = wallpaper_dir
-settings['wallpaper']['favorites'] = [{
-    "appearance": "dark",
-    "colorScheme": "Catppuccin",
-    "darkMode": True,
-    "generationMethod": "tonal-spot",
-    "paletteColors": ["#cba6f7", "#fab387", "#94e2d5", "#f38ba8"],
-    "path": wallpaper_path,
-    "useWallpaperColors": False,
-}]
-settings['wallpaper']['monitorDirectories'] = []
-settings['wallpaper']['enabled'] = True
-settings['wallpaper']['setWallpaperOnAllMonitors'] = True
+# avoid resolution-specific desktop widgets, but keep core widgets active
+if 'desktopWidgets' in settings:
+    settings['desktopWidgets']['enabled'] = False
+    settings['desktopWidgets']['monitorWidgets'] = []
+    settings['desktopWidgets']['overviewEnabled'] = False
 
-# Keep the rest of the shell functional while avoiding hardcoded personal data.
-settings['noctaliaPerformance'] = {
-    'disableDesktopWidgets': True,
-    'disableWallpaper': False,
-}
+# keep bar/dock/notifications without hardcoded monitor names
+for section in ['bar', 'dock', 'notifications', 'osd']:
+    if section in settings and 'monitors' in settings[section]:
+        settings[section]['monitors'] = []
 
 with open(os.path.join(config_dir, 'settings.json'), 'w', encoding='utf-8') as f:
     json.dump(settings, f, indent=4)
     f.write('\n')
 PY
 
-cp -f "$repo_dir/Wallpaper.jpg" "$wallpaper_dir/Wallpaper.jpg"
-
-echo "[4/4] Done. Noctalia is installed and configured with a portable setup. Wallpaper: $wallpaper_dir/Wallpaper.jpg"
+echo "[4/4] Done. Noctalia is installed and configured."
+echo "Wallpaper: $wallpaper_dir/$(basename "$wallpaper_source")"
+echo "Config: $config_dir/"
