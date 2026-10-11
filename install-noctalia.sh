@@ -3,7 +3,17 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/noctalia"
-wallpaper_dir="$HOME/Pictures/Noctalia/Wallpapers"
+wallpaper_dir="$HOME/Wallpaper"
+wallpaper_target="$wallpaper_dir/wallpaper.jpg"
+
+if [[ -f "$repo_dir/wallpaper.jpg" ]]; then
+  wallpaper_source="$repo_dir/wallpaper.jpg"
+elif [[ -f "$repo_dir/Wallpaper.jpg" ]]; then
+  wallpaper_source="$repo_dir/Wallpaper.jpg"
+else
+  echo "ERROR: wallpaper.jpg or Wallpaper.jpg not found in $repo_dir"
+  exit 1
+fi
 
 if ! command -v git >/dev/null 2>&1; then
   echo "[1/5] Installing git..."
@@ -34,14 +44,9 @@ fi
 echo "[3/5] Preparing config directory and wallpaper folder..."
 mkdir -p "$config_dir" "$wallpaper_dir"
 
-if [[ ! -f "$repo_dir/Wallpaper.jpg" ]]; then
-  echo "ERROR: Wallpaper.jpg not found in $repo_dir"
-  exit 1
-fi
-
 cp -f "$repo_dir/config/colors.json" "$config_dir/colors.json"
 cp -f "$repo_dir/config/plugins.json" "$config_dir/plugins.json"
-cp -f "$repo_dir/Wallpaper.jpg" "$wallpaper_dir/Wallpaper.jpg"
+cp -f "$wallpaper_source" "$wallpaper_target"
 
 echo "[4/5] Processing settings.json for your system..."
 
@@ -57,7 +62,7 @@ settings_path = sys.argv[3]
 with open(settings_path, 'r', encoding='utf-8') as f:
     settings = json.load(f)
 
-wallpaper_path = os.path.join(wallpaper_dir, 'Wallpaper.jpg')
+wallpaper_path = os.path.join(wallpaper_dir, 'wallpaper.jpg')
 
 settings['general']['avatarImage'] = wallpaper_path
 settings['wallpaper']['directory'] = wallpaper_dir
@@ -102,5 +107,5 @@ with open(os.path.join(config_dir, 'settings.json'), 'w', encoding='utf-8') as f
 PY
 
 echo "[5/5] Done. Noctalia is installed and configured."
-echo "Wallpaper: $wallpaper_dir/Wallpaper.jpg"
+echo "Wallpaper: $wallpaper_dir/wallpaper.jpg"
 echo "Config: $config_dir/"
