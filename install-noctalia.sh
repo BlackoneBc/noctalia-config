@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Wallpaper-URL aus dem Repo
+WALLPAPER_URL="https://raw.githubusercontent.com/BlackoneBc/noctalia-config/main/Wallpaper.jpg"
+
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/noctalia"
 wallpaper_dir="$HOME/Wallpaper"
 wallpaper_target="$wallpaper_dir/wallpaper.jpg"
 
-if [[ -f "$repo_dir/wallpaper.jpg" ]]; then
-  wallpaper_source="$repo_dir/wallpaper.jpg"
-elif [[ -f "$repo_dir/Wallpaper.jpg" ]]; then
-  wallpaper_source="$repo_dir/Wallpaper.jpg"
-else
-  echo "ERROR: wallpaper.jpg or Wallpaper.jpg not found in $repo_dir"
+# Wallpaper-Ordner anlegen und Bild von GitHub laden
+echo "[0/5] Lade Wallpaper von GitHub..."
+mkdir -p "$wallpaper_dir"
+curl -fsSL "$WALLPAPER_URL" -o "$wallpaper_target"
+
+if [[ ! -s "$wallpaper_target" ]]; then
+  echo "ERROR: Wallpaper konnte nicht geladen werden: $WALLPAPER_URL"
   exit 1
 fi
 
@@ -41,12 +45,11 @@ if ! command -v noctalia >/dev/null 2>&1; then
   sudo ninja -C build install
 fi
 
-echo "[3/5] Preparing config directory and wallpaper folder..."
-mkdir -p "$config_dir" "$wallpaper_dir"
+echo "[3/5] Preparing config directory..."
+mkdir -p "$config_dir"
 
 cp -f "$repo_dir/config/colors.json" "$config_dir/colors.json"
 cp -f "$repo_dir/config/plugins.json" "$config_dir/plugins.json"
-cp -f "$wallpaper_source" "$wallpaper_target"
 
 echo "[4/5] Processing settings.json for your system..."
 
@@ -106,7 +109,7 @@ with open(os.path.join(config_dir, 'settings.json'), 'w', encoding='utf-8') as f
     f.write('\n')
 PY
 
-echo "[5/5] Done. Noctalia is installed and configured."
-echo "Wallpaper: $wallpaper_dir/wallpaper.jpg"
-echo "Config: $config_dir/"
+echo "[5/5] Fertig."
+echo "Wallpaper: $wallpaper_target"
+echo "Config:    $config_dir/"
 noctalia
